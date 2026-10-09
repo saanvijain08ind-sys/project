@@ -30,7 +30,7 @@ export const JoinRoomModal: React.FC<JoinRoomModalProps> = ({
   const [username, setUsername] = useState(initialUsername);
   const [color, setColor] = useState(initialColor);
   const [passcode, setPasscode] = useState('');
-  const [language, setLanguage] = useState('typescript');
+  const [language, setLanguage] = useState('javascript');
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
@@ -82,7 +82,7 @@ export const JoinRoomModal: React.FC<JoinRoomModalProps> = ({
     setRoomId(demoId);
     setPasscode('');
     setTab('create');
-    onCreateRoom(demoId, username || 'Lead_Architect', color, undefined, 'typescript');
+    onCreateRoom(demoId, username || 'Lead_Architect', color, undefined, 'javascript');
   };
 
   return (

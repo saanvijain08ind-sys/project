@@ -109,11 +109,14 @@ export class RoomManager {
     this.emptyRoomTimeouts = new Map(); // roomId -> NodeJS.Timeout
   }
 
-  static getDefaultCode(language = 'typescript') {
-    return `/**\n * SyncPad - Collaborative Real-Time Code Pad\n * Language: ${language.toUpperCase()}\n */\n\nfunction main(): void {\n  console.log("Welcome to real-time synchronized editing!");\n}\n\nmain();\n`;
+  static getDefaultCode(language = 'javascript') {
+    if (language === 'python') {
+      return `# SyncPad Real-Time Collaborative Workspace\n\ndef main():\n    print("Welcome to real-time synchronized editing!")\n\nmain()\n`;
+    }
+    return `// SyncPad - Real-Time Collaborative Workspace\n// Clean, executable JavaScript starter template\n\nfunction runWorkspaceDiagnostics() {\n  console.log("🚀 SyncPad Real-Time Workspace Initialized");\n\n  const session = {\n    protocol: "WebSocket (Socket.IO)",\n    rateLimit: "5 updates/second",\n    failover: "Oldest Active Member",\n    status: "Synchronized",\n  };\n\n  console.log("Session Specifications:");\n  for (const [key, value] of Object.entries(session)) {\n    console.log(\`  • \${key}: \${value}\`);\n  }\n\n  function fibonacci(n) {\n    if (n <= 1) return n;\n    return fibonacci(n - 1) + fibonacci(n - 2);\n  }\n\n  const terms = Array.from({ length: 8 }, (_, i) => fibonacci(i));\n  console.log(\`\\nFibonacci Series (first 8): [\${terms.join(', ')}]\`);\n  console.log("✅ All systems operational. Ready to collaborate!");\n}\n\nrunWorkspaceDiagnostics();\n`;
   }
 
-  createRoom(roomId, hostSocketId, hostUserId, hostName, hostColor, passcode, language = 'typescript') {
+  createRoom(roomId, hostSocketId, hostUserId, hostName, hostColor, passcode, language = 'javascript') {
     if (this.rooms.has(roomId)) {
       throw new Error(`Room '${roomId}' already exists.`);
     }

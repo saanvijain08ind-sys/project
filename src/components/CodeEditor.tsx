@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState, useMemo } from 'react';
 import { Participant, RateLimitAlert } from '../types.ts';
 import { highlightCode } from '../utils/codeHighlighter.ts';
+import { transpileToExecutableJs } from '../utils/tsTranspiler.ts';
 import { Play, Copy, Check, AlertTriangle, Zap, Download } from 'lucide-react';
 
 interface CodeEditorProps {
@@ -175,14 +176,21 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
         if (language === 'javascript' || language === 'typescript') {
           const logs: string[] = [];
           const customConsole = {
-            log: (...args: unknown[]) => logs.push(args.map((a) => (typeof a === 'object' ? JSON.stringify(a) : String(a))).join(' ')),
+            log: (...args: unknown[]) => logs.push(args.map((a) => (typeof a === 'object' ? JSON.stringify(a, null, 2) : String(a))).join(' ')),
             error: (...args: unknown[]) => logs.push('❌ Error: ' + args.join(' ')),
             warn: (...args: unknown[]) => logs.push('⚠️ Warn: ' + args.join(' ')),
+            info: (...args: unknown[]) => logs.push('ℹ️ Info: ' + args.join(' ')),
           };
+
+          // Transpile and strip TypeScript syntax (interfaces, types, annotations) into valid JS
+          const { jsCode } = transpileToExecutableJs(code);
+
           // Execute in isolated function context
-          const runFn = new Function('console', code);
+          const runFn = new Function('console', jsCode);
           runFn(customConsole);
-          setOutputConsole(logs.length > 0 ? logs.join('\n') : '▶ Program executed successfully (No console output).');
+
+          const prefix = language === 'typescript' ? '⚡ [TypeScript Transpiled & Executed Successfully]\n' : '▶ [JavaScript Executed Successfully]\n';
+          setOutputConsole(logs.length > 0 ? prefix + logs.join('\n') : prefix + 'Program finished with no console output.');
         } else {
           setOutputConsole(`[Sandbox Environment]: Mock execution for ${language.toUpperCase()} completed successfully.\nCode version v${version} validated.`);
         }
@@ -191,7 +199,7 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
       } finally {
         setIsRunning(false);
       }
-    }, 250);
+    }, 150);
   };
 
   useEffect(() => {
@@ -199,6 +207,16 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
       if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
     };
   }, []);
+
+  const filenameMap: Record<string, string> = {
+    javascript: 'main.js',
+    typescript: 'main.ts',
+    python: 'script.py',
+    html: 'index.html',
+    css: 'styles.css',
+    json: 'data.json',
+  };
+  const currentFilename = filenameMap[language] || 'code.txt';
 
   return (
     <div className="flex flex-col h-full bg-slate-950 border border-slate-800/80 rounded-xl overflow-hidden shadow-2xl relative">
@@ -222,7 +240,7 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-1.5 font-mono text-slate-400">
             <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block animate-pulse"></span>
-            <span>editor.ts</span>
+            <span>{currentFilename}</span>
             <span className="text-slate-600">v{version}</span>
           </div>
 

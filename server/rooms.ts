@@ -16,21 +16,32 @@ export class RoomManager {
   /**
    * Default starter code templates
    */
-  public static getDefaultCode(language: string = 'typescript'): string {
+  public static getDefaultCode(language: string = 'javascript'): string {
     switch (language) {
-      case 'javascript':
-        return `// SyncPad Real-Time Collaborative Workspace
-// Welcome! Type below to collaborate in real-time.
+      case 'typescript':
+        return `/**
+ * SyncPad - Real-Time Collaborative Workspace
+ * TypeScript support with automatic type stripping on execution.
+ */
 
-function fibonacci(n) {
-  if (n <= 1) return n;
-  return fibonacci(n - 1) + fibonacci(n - 2);
+interface CollaborativeSession {
+  readonly roomId: string;
+  activeUsers: number;
+  rateLimitPerSec: number;
 }
 
-console.log("Fibonacci sequence test:");
-for (let i = 0; i < 10; i++) {
-  console.log(\`fib(\${i}) = \${fibonacci(i)}\`);
+const session: CollaborativeSession = {
+  roomId: "workspace-alpha",
+  activeUsers: 1,
+  rateLimitPerSec: 5,
+};
+
+function logWorkspaceStatus(info: CollaborativeSession): void {
+  console.log(\`[SyncPad] Session \${info.roomId} initialized with \${info.activeUsers} collaborator(s).\`);
+  console.log(\`[Rate Limiting]: Strict \${info.rateLimitPerSec} updates/second enforced.\`);
 }
+
+logWorkspaceStatus(session);
 `;
       case 'python':
         return `# SyncPad Real-Time Collaborative Workspace
@@ -49,28 +60,37 @@ numbers = [38, 27, 43, 3, 9, 82, 10]
 print(f"Sorted: {quicksort(numbers)}")
 `;
       default:
-        return `/**
- * SyncPad - Collaborative Real-Time Code Pad
- * Multi-user synchronized editor with cursor awareness & rate limiting.
- */
+      case 'javascript':
+        return `// SyncPad - Real-Time Collaborative Workspace
+// Clean, executable JavaScript starter template
 
-interface CollaborativeSession {
-  readonly roomId: string;
-  activeUsers: number;
-  rateLimitPerSec: number;
+function runWorkspaceDiagnostics() {
+  console.log("🚀 SyncPad Real-Time Workspace Initialized");
+
+  const session = {
+    protocol: "WebSocket (Socket.IO)",
+    rateLimit: "5 updates/second (sliding window)",
+    failover: "Oldest Active Member",
+    status: "Synchronized",
+  };
+
+  console.log("Session Specifications:");
+  for (const [key, value] of Object.entries(session)) {
+    console.log(\`  • \${key}: \${value}\`);
+  }
+
+  // Sample algorithmic benchmark
+  function fibonacci(n) {
+    if (n <= 1) return n;
+    return fibonacci(n - 1) + fibonacci(n - 2);
+  }
+
+  const terms = Array.from({ length: 8 }, (_, i) => fibonacci(i));
+  console.log(\`\\nFibonacci Series (first 8): [\${terms.join(', ')}]\`);
+  console.log("✅ All systems operational. Ready to collaborate!");
 }
 
-const session: CollaborativeSession = {
-  roomId: "workspace-alpha",
-  activeUsers: 1,
-  rateLimitPerSec: 5,
-};
-
-function logWorkspaceStatus(info: CollaborativeSession): void {
-  console.log(\`[SyncPad] Session \${info.roomId} initialized with \${info.activeUsers} collaborator(s).\`);
-}
-
-logWorkspaceStatus(session);
+runWorkspaceDiagnostics();
 `;
     }
   }
@@ -85,7 +105,7 @@ logWorkspaceStatus(session);
     hostName: string,
     hostColor: string,
     passcode?: string,
-    language: string = 'typescript'
+    language: string = 'javascript'
   ): { room: RoomState; participant: Participant } {
     const existing = this.rooms.get(roomId);
     if (existing) {

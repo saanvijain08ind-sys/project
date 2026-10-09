@@ -251,7 +251,7 @@ export default function App() {
       rUsername: string,
       rColor: string,
       passcode?: string,
-      language: string = 'typescript'
+      language: string = 'javascript'
     ): Promise<{ success: boolean; error?: string }> => {
       return new Promise((resolve) => {
         socket.emit(

@@ -53,7 +53,7 @@ export function setupSocketHandlers(
             cleanUsername,
             cleanColor,
             passcode,
-            language || 'typescript'
+            language || 'javascript'
           );
 
           socket.join(cleanRoomId);
