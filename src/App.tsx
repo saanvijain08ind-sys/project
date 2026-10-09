@@ -6,18 +6,28 @@ import { CodeEditor } from './components/CodeEditor.tsx';
 import { ParticipantsList } from './components/ParticipantsList.tsx';
 import { AuditLogView } from './components/AuditLogView.tsx';
 import { JoinRoomModal } from './components/JoinRoomModal.tsx';
+import { DevToolsDrawer } from './components/DevToolsDrawer.tsx';
 import { ArchitectureDocsModal } from './components/ArchitectureDocsModal.tsx';
-import { Users, ShieldCheck, Crown } from 'lucide-react';
+import { transpileToExecutableJs } from './utils/tsTranspiler.ts';
+import { AlertTriangle, Crown, Terminal } from 'lucide-react';
 
 export default function App() {
   const [isConnected, setIsConnected] = useState(socket.connected);
   const [roomData, setRoomData] = useState<RoomData | null>(null);
   const [rateLimitAlert, setRateLimitAlert] = useState<RateLimitAlert | null>(null);
-  const [isDocsOpen, setIsDocsOpen] = useState(false);
-  const [activeSideTab, setActiveSideTab] = useState<'participants' | 'audit'>('participants');
   const [hostPromoNotice, setHostPromoNotice] = useState<string | null>(null);
 
-  // Rate Limiting monitoring velocity (local update count per second)
+  // UI layout states
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [activeSideTab, setActiveSideTab] = useState<'participants' | 'activity'>('participants');
+  const [isDevToolsOpen, setIsDevToolsOpen] = useState(false);
+  const [isDocsOpen, setIsDocsOpen] = useState(false);
+
+  // Code Execution Engine state
+  const [outputConsole, setOutputConsole] = useState<string | null>(null);
+  const [isRunning, setIsRunning] = useState(false);
+
+  // Rate Limiting monitoring velocity
   const [currentUpdateRate, setCurrentUpdateRate] = useState(0);
   const recentUpdatesRef = useRef<number[]>([]);
 
@@ -25,7 +35,7 @@ export default function App() {
   const username = useRef(getStoredUsername()).current;
   const color = useRef(getStoredColor()).current;
 
-  // Track velocity meter
+  // Track socket request velocity
   useEffect(() => {
     const interval = setInterval(() => {
       const now = Date.now();
@@ -36,7 +46,7 @@ export default function App() {
     return () => clearInterval(interval);
   }, []);
 
-  // Setup Socket event listeners
+  // Socket.IO event listeners
   useEffect(() => {
     function onConnect() {
       setIsConnected(true);
@@ -73,7 +83,7 @@ export default function App() {
     }) {
       setRoomData((prev) => {
         if (!prev) return null;
-        const updatedParticipants = prev.participants.map((p) => {
+        const updated = prev.participants.map((p) => {
           if (p.userId === payload.userId) {
             return {
               ...p,
@@ -84,7 +94,7 @@ export default function App() {
           }
           return p;
         });
-        return { ...prev, participants: updatedParticipants };
+        return { ...prev, participants: updated };
       });
     }
 
@@ -117,7 +127,6 @@ export default function App() {
     }) {
       setRoomData((prev) => {
         if (!prev) return null;
-        // Avoid duplicate user records
         const filtered = prev.participants.filter((p) => p.userId !== payload.participant.userId);
         const newLogs = payload.auditLog ? [payload.auditLog, ...prev.auditLogs] : prev.auditLogs;
         return {
@@ -136,7 +145,9 @@ export default function App() {
     }) {
       setRoomData((prev) => {
         if (!prev) return null;
-        const filtered = prev.participants.filter((p) => p.socketId !== payload.socketId && p.userId !== payload.userId);
+        const filtered = prev.participants.filter(
+          (p) => p.socketId !== payload.socketId && p.userId !== payload.userId
+        );
         const newLogs = payload.auditLog ? [payload.auditLog, ...prev.auditLogs] : prev.auditLogs;
         return {
           ...prev,
@@ -146,27 +157,19 @@ export default function App() {
       });
     }
 
-    // Host Failover Notification to the promoted client
     function onHostPromoted(payload: { isHost: boolean; reason: string }) {
       setHostPromoNotice(payload.reason);
       setRoomData((prev) => {
         if (!prev) return null;
-        const updatedParticipants = prev.participants.map((p) => {
-          if (p.userId === userId) {
-            return { ...p, isHost: true };
-          }
+        const updated = prev.participants.map((p) => {
+          if (p.userId === userId) return { ...p, isHost: true };
           return p;
         });
-        return {
-          ...prev,
-          isHost: true,
-          participants: updatedParticipants,
-        };
+        return { ...prev, isHost: true, participants: updated };
       });
-      setTimeout(() => setHostPromoNotice(null), 6000);
+      setTimeout(() => setHostPromoNotice(null), 5000);
     }
 
-    // Room-wide broadcast of host migration
     function onRoomHostChanged(payload: {
       newHostSocketId: string;
       newHostUserId: string;
@@ -175,7 +178,7 @@ export default function App() {
     }) {
       setRoomData((prev) => {
         if (!prev) return null;
-        const updatedParticipants = prev.participants.map((p) => ({
+        const updated = prev.participants.map((p) => ({
           ...p,
           isHost: p.userId === payload.newHostUserId,
         }));
@@ -185,7 +188,7 @@ export default function App() {
           hostSocketId: payload.newHostSocketId,
           hostUserId: payload.newHostUserId,
           isHost: payload.newHostUserId === userId,
-          participants: updatedParticipants,
+          participants: updated,
           auditLogs: newLogs,
         };
       });
@@ -197,21 +200,14 @@ export default function App() {
       retryAfterMs: number;
       message: string;
     }) {
-      setRateLimitAlert({
-        ...payload,
-        timestamp: Date.now(),
-      });
+      setRateLimitAlert({ ...payload, timestamp: Date.now() });
       setTimeout(() => setRateLimitAlert(null), 4000);
     }
 
     function onAuditNewEntry(payload: AuditLogEntry) {
       setRoomData((prev) => {
         if (!prev) return null;
-        // Prepend new entry
-        return {
-          ...prev,
-          auditLogs: [payload, ...prev.auditLogs.slice(0, 99)],
-        };
+        return { ...prev, auditLogs: [payload, ...prev.auditLogs.slice(0, 99)] };
       });
     }
 
@@ -244,64 +240,54 @@ export default function App() {
     };
   }, [userId]);
 
-  // Handle Room Creation
-  const handleCreateRoom = useCallback(
+  // Seamless Join or Create action
+  const handleJoinOrCreate = useCallback(
     (
-      roomId: string,
-      rUsername: string,
-      rColor: string,
-      passcode?: string,
-      language: string = 'javascript'
-    ): Promise<{ success: boolean; error?: string }> => {
-      return new Promise((resolve) => {
-        socket.emit(
-          'room:create',
-          {
-            roomId,
-            userId,
-            username: rUsername,
-            color: rColor,
-            passcode,
-            language,
-          },
-          (res: { success: boolean; error?: string; room?: RoomData }) => {
-            if (res.success && res.room) {
-              setRoomData(res.room);
-              resolve({ success: true });
-            } else {
-              resolve({ success: false, error: res.error || 'Room creation failed' });
-            }
-          }
-        );
-      });
-    },
-    [userId]
-  );
-
-  // Handle Room Joining
-  const handleJoinRoom = useCallback(
-    (
-      roomId: string,
+      targetRoomId: string,
       rUsername: string,
       rColor: string,
       passcode?: string
     ): Promise<{ success: boolean; error?: string }> => {
       return new Promise((resolve) => {
+        // First try to join existing room
         socket.emit(
           'room:join',
           {
-            roomId,
+            roomId: targetRoomId,
             userId,
             username: rUsername,
             color: rColor,
             passcode,
           },
-          (res: { success: boolean; error?: string; room?: RoomData }) => {
-            if (res.success && res.room) {
-              setRoomData(res.room);
-              resolve({ success: true });
+          (joinRes: { success: boolean; error?: string; room?: RoomData }) => {
+            if (joinRes.success && joinRes.room) {
+              setRoomData(joinRes.room);
+              return resolve({ success: true });
+            }
+
+            // If room does not exist, auto-create it
+            if (joinRes.error && joinRes.error.includes('does not exist')) {
+              socket.emit(
+                'room:create',
+                {
+                  roomId: targetRoomId,
+                  userId,
+                  username: rUsername,
+                  color: rColor,
+                  passcode,
+                  language: 'javascript',
+                },
+                (createRes: { success: boolean; error?: string; room?: RoomData }) => {
+                  if (createRes.success && createRes.room) {
+                    setRoomData(createRes.room);
+                    return resolve({ success: true });
+                  }
+                  resolve({ success: false, error: createRes.error || 'Failed to create room' });
+                }
+              );
             } else {
-              resolve({ success: false, error: res.error || 'Failed to join room' });
+              // Wrong passcode or other join rejection
+              resolve({ success: false, error: joinRes.error || 'Failed to enter room' });
             }
           }
         );
@@ -310,25 +296,18 @@ export default function App() {
     [userId]
   );
 
-  // Leave Room
   const handleLeaveRoom = () => {
     socket.disconnect();
     socket.connect();
     setRoomData(null);
   };
 
-  // Code Mutation Handler
   const handleCodeChange = (newCode: string) => {
     if (!roomData) return;
 
-    // Record local hit for rate monitor
-    const now = Date.now();
-    recentUpdatesRef.current.push(now);
-
-    // Optimistic local update
+    recentUpdatesRef.current.push(Date.now());
     setRoomData((prev) => (prev ? { ...prev, code: newCode } : null));
 
-    // Emit mutation to server
     socket.emit('code:update', {
       roomId: roomData.roomId,
       code: newCode,
@@ -336,7 +315,6 @@ export default function App() {
     });
   };
 
-  // Cursor Update Handler
   const handleCursorChange = (
     cursor: { line: number; ch: number },
     selection?: { startLine: number; startCh: number; endLine: number; endCh: number }
@@ -349,7 +327,6 @@ export default function App() {
     });
   };
 
-  // Typing Update Handler
   const handleTypingChange = (isTyping: boolean) => {
     if (!roomData) return;
     socket.emit('typing:status', {
@@ -358,7 +335,6 @@ export default function App() {
     });
   };
 
-  // Language Change Handler
   const handleLanguageChange = (language: string) => {
     if (!roomData) return;
     setRoomData((prev) => (prev ? { ...prev, language } : null));
@@ -368,8 +344,41 @@ export default function App() {
     });
   };
 
-  // Rate Limiting Flood Test:
-  // Deliberately blast > 5 mutations in <1 second to test the server's rate limiter
+  // Run Code in sandboxed client execution engine
+  const handleRunCode = () => {
+    if (!roomData) return;
+    setIsRunning(true);
+    setOutputConsole(null);
+
+    setTimeout(() => {
+      try {
+        const lang = roomData.language;
+        if (lang === 'javascript' || lang === 'typescript') {
+          const logs: string[] = [];
+          const customConsole = {
+            log: (...args: unknown[]) =>
+              logs.push(args.map((a) => (typeof a === 'object' ? JSON.stringify(a, null, 2) : String(a))).join(' ')),
+            error: (...args: unknown[]) => logs.push('❌ ' + args.join(' ')),
+            warn: (...args: unknown[]) => logs.push('⚠️ ' + args.join(' ')),
+          };
+
+          const { jsCode } = transpileToExecutableJs(roomData.code);
+          const runFn = new Function('console', jsCode);
+          runFn(customConsole);
+
+          setOutputConsole(logs.length > 0 ? logs.join('\n') : 'Program ran with no output.');
+        } else {
+          setOutputConsole(`[${lang.toUpperCase()} Sandbox]: Code validated (v${roomData.version}).`);
+        }
+      } catch (err: unknown) {
+        setOutputConsole('Error: ' + (err instanceof Error ? err.message : String(err)));
+      } finally {
+        setIsRunning(false);
+      }
+    }, 100);
+  };
+
+  // Flood Test Trigger (moved to discreet Dev Tools drawer)
   const handleTriggerFloodTest = () => {
     if (!roomData) return;
     for (let i = 1; i <= 9; i++) {
@@ -377,30 +386,29 @@ export default function App() {
         recentUpdatesRef.current.push(Date.now());
         socket.emit('code:update', {
           roomId: roomData.roomId,
-          code: roomData.code + `\n// Flood packet #${i} (${Date.now()})`,
+          code: roomData.code + `\n// Packet #${i}`,
           version: roomData.version,
         });
-      }, i * 40);
+      }, i * 35);
     }
   };
 
-  // Simulate Peer Collaborator for solo testing
+  // Peer Collaborator simulation (moved to discreet Dev Tools drawer)
   const handleAddSimulatedPeer = () => {
     if (!roomData) return;
-    const botNames = ['Sarah_Core', 'Alex_Frontend', 'Elena_Systems', 'Marcus_Dev'];
-    const chosenName = botNames[Math.floor(Math.random() * botNames.length)];
+    const names = ['Sarah', 'Alex', 'Elena', 'Marcus'];
+    const chosen = names[Math.floor(Math.random() * names.length)];
     const fakeUserId = 'sim_' + Math.random().toString(36).substring(2, 7);
     const fakeSocketId = 'sock_' + Math.random().toString(36).substring(2, 7);
-    const fakeColor = '#f59e0b';
 
     const simParticipant: Participant = {
       socketId: fakeSocketId,
       userId: fakeUserId,
-      username: chosenName,
-      color: fakeColor,
+      username: chosen,
+      color: '#f59e0b',
       isHost: false,
       joinedAt: Date.now(),
-      cursor: { line: 4, ch: 18 },
+      cursor: { line: 3, ch: 14 },
       isTyping: true,
       lastActiveAt: Date.now(),
     };
@@ -409,9 +417,9 @@ export default function App() {
       id: crypto.randomUUID(),
       timestamp: Date.now(),
       type: 'USER_JOINED',
-      actorName: chosenName,
-      actorColor: fakeColor,
-      message: `${chosenName} (Simulated Collaborator) joined session`,
+      actorName: chosen,
+      actorColor: '#f59e0b',
+      message: `${chosen} joined workspace`,
     };
 
     setRoomData((prev) => {
@@ -423,25 +431,24 @@ export default function App() {
       };
     });
 
-    // Simulate collaborator typing and line movements
     let step = 0;
-    const simInterval = setInterval(() => {
+    const interval = setInterval(() => {
       step++;
       setRoomData((prev) => {
         if (!prev) return null;
         const exists = prev.participants.some((p) => p.userId === fakeUserId);
         if (!exists) {
-          clearInterval(simInterval);
+          clearInterval(interval);
           return prev;
         }
 
         const lines = prev.code.split('\n');
-        const targetLine = Math.min(lines.length, (step % 6) + 2);
+        const targetLine = Math.min(lines.length, (step % 5) + 2);
         const updated = prev.participants.map((p) => {
           if (p.userId === fakeUserId) {
             return {
               ...p,
-              cursor: { line: targetLine, ch: (step * 3) % 25 + 1 },
+              cursor: { line: targetLine, ch: (step * 4) % 20 + 2 },
               isTyping: step % 2 === 0,
             };
           }
@@ -451,8 +458,8 @@ export default function App() {
         return { ...prev, participants: updated };
       });
 
-      if (step > 15) {
-        clearInterval(simInterval);
+      if (step > 12) {
+        clearInterval(interval);
         setRoomData((prev) => {
           if (!prev) return null;
           return {
@@ -466,11 +473,10 @@ export default function App() {
     }, 1500);
   };
 
-  // Simulate Host Failover (Current Host steps down to test migration to oldest member)
+  // Host failover test (moved to Dev Tools drawer)
   const handleSimulateHostDisconnect = () => {
     if (!roomData || !roomData.isHost || roomData.participants.length <= 1) return;
 
-    // Find the oldest remaining member
     const others = roomData.participants.filter((p) => p.userId !== userId);
     const oldest = others.sort((a, b) => a.joinedAt - b.joinedAt)[0];
 
@@ -480,7 +486,7 @@ export default function App() {
       type: 'HOST_TRANSFERRED',
       actorName: oldest.username,
       actorColor: oldest.color,
-      message: `Host failover: ${oldest.username} promoted to host (oldest active member).`,
+      message: `Host transferred to ${oldest.username}`,
     };
 
     setRoomData((prev) => {
@@ -500,114 +506,135 @@ export default function App() {
   };
 
   return (
-    <div className="flex flex-col h-screen w-screen bg-slate-950 text-slate-100 overflow-hidden font-sans">
-      {/* If not in a room, display the Create/Join Room modal */}
+    <div className="flex flex-col h-screen w-screen bg-zinc-950 text-zinc-100 overflow-hidden font-sans select-none">
       {!roomData ? (
         <JoinRoomModal
           initialUsername={username}
           initialColor={color}
-          onCreateRoom={handleCreateRoom}
-          onJoinRoom={handleJoinRoom}
+          onJoinOrCreate={handleJoinOrCreate}
         />
       ) : (
         <>
-          {/* Top Navbar */}
+          {/* Minimalist Top Header */}
           <Navbar
             roomId={roomData.roomId}
             hasPasscode={roomData.hasPasscode}
-            isHost={roomData.isHost}
+            language={roomData.language}
+            onLanguageChange={handleLanguageChange}
+            onRunCode={handleRunCode}
+            isRunning={isRunning}
+            participantCount={roomData.participants.length}
+            isSidebarOpen={isSidebarOpen}
+            onToggleSidebar={() => setIsSidebarOpen((prev) => !prev)}
             isConnected={isConnected}
             onLeaveRoom={handleLeaveRoom}
-            onOpenDocs={() => setIsDocsOpen(true)}
-            currentUpdateRate={currentUpdateRate}
           />
 
-          {/* Host Failover Celebration Banner */}
-          {hostPromoNotice && (
-            <div className="bg-gradient-to-r from-amber-500/20 via-indigo-500/20 to-purple-500/20 border-b border-amber-500/30 px-4 py-2 flex items-center justify-between text-amber-200 text-xs animate-in slide-in-from-top duration-300">
-              <div className="flex items-center gap-2">
-                <Crown className="w-4 h-4 text-amber-400 shrink-0" />
-                <span className="font-semibold">Host Administrative Status Transferred:</span>
-                <span>{hostPromoNotice}</span>
-              </div>
-              <span className="bg-amber-400 text-slate-950 px-2 py-0.5 rounded font-bold text-[10px]">
-                You are now Host
-              </span>
+          {/* Floating Subtle Notification Toasts */}
+          {rateLimitAlert && (
+            <div className="fixed top-14 left-1/2 -translate-x-1/2 z-50 px-3 py-1.5 rounded-lg bg-zinc-900 border border-amber-500/40 text-amber-300 text-xs shadow-xl flex items-center gap-2 animate-in fade-in slide-in-from-top-2">
+              <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+              <span>Too many updates. Please slow down ({rateLimitAlert.retryAfterMs}ms backoff).</span>
             </div>
           )}
 
-          {/* Main Synchronized Workspace (Split-Screen Layout) */}
-          <main className="flex-1 flex overflow-hidden p-3 gap-3">
-            {/* Left Panel: High-Performance Code Editor */}
-            <section className="flex-1 min-w-0 h-full flex flex-col">
+          {hostPromoNotice && (
+            <div className="fixed top-14 left-1/2 -translate-x-1/2 z-50 px-3 py-1.5 rounded-lg bg-zinc-900 border border-zinc-700 text-zinc-200 text-xs shadow-xl flex items-center gap-2 animate-in fade-in slide-in-from-top-2">
+              <Crown className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+              <span>You are now the room host.</span>
+            </div>
+          )}
+
+          {/* Distraction-Free Split View */}
+          <main className="flex-1 flex overflow-hidden">
+            {/* Full-Height Code Editor */}
+            <section className="flex-1 h-full min-w-0">
               <CodeEditor
                 code={roomData.code}
                 language={roomData.language}
-                version={roomData.version}
                 participants={roomData.participants}
                 currentUserId={userId}
                 onCodeChange={handleCodeChange}
                 onCursorChange={handleCursorChange}
                 onTypingChange={handleTypingChange}
-                rateLimitAlert={rateLimitAlert}
-                onTriggerFloodTest={handleTriggerFloodTest}
-                isHost={roomData.isHost}
-                onLanguageChange={handleLanguageChange}
+                outputConsole={outputConsole}
+                onClearConsole={() => setOutputConsole(null)}
               />
             </section>
 
-            {/* Right Panel: Split Workspace Sidebar (Active Participants & Audit Log) */}
-            <aside className="w-80 lg:w-96 shrink-0 h-full flex flex-col">
-              {/* Tab Selector */}
-              <div className="grid grid-cols-2 gap-1 p-1 bg-slate-900 border border-slate-800 rounded-xl mb-2">
-                <button
-                  onClick={() => setActiveSideTab('participants')}
-                  className={`flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                    activeSideTab === 'participants'
-                      ? 'bg-indigo-600 text-white shadow-sm'
-                      : 'text-slate-400 hover:text-slate-200'
-                  }`}
-                >
-                  <Users className="w-3.5 h-3.5" />
-                  <span>Participants ({roomData.participants.length})</span>
-                </button>
-                <button
-                  onClick={() => setActiveSideTab('audit')}
-                  className={`flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                    activeSideTab === 'audit'
-                      ? 'bg-indigo-600 text-white shadow-sm'
-                      : 'text-slate-400 hover:text-slate-200'
-                  }`}
-                >
-                  <ShieldCheck className="w-3.5 h-3.5" />
-                  <span>Audit Trail ({roomData.auditLogs.length})</span>
-                </button>
-              </div>
+            {/* Collapsible Right Sidebar */}
+            {isSidebarOpen && (
+              <aside className="w-64 border-l border-zinc-850 bg-zinc-950 flex flex-col h-full shrink-0">
+                {/* Segmented Tab Header */}
+                <div className="h-9 px-3 border-b border-zinc-850 flex items-center gap-4 text-xs">
+                  <button
+                    onClick={() => setActiveSideTab('participants')}
+                    className={`font-medium transition-colors cursor-pointer ${
+                      activeSideTab === 'participants'
+                        ? 'text-zinc-100'
+                        : 'text-zinc-500 hover:text-zinc-300'
+                    }`}
+                  >
+                    Participants ({roomData.participants.length})
+                  </button>
+                  <button
+                    onClick={() => setActiveSideTab('activity')}
+                    className={`font-medium transition-colors cursor-pointer ${
+                      activeSideTab === 'activity'
+                        ? 'text-zinc-100'
+                        : 'text-zinc-500 hover:text-zinc-300'
+                    }`}
+                  >
+                    Activity
+                  </button>
+                </div>
 
-              {/* Sidebar View Container */}
-              <div className="flex-1 min-h-0">
-                {activeSideTab === 'participants' ? (
-                  <ParticipantsList
-                    participants={roomData.participants}
-                    currentUserId={userId}
-                    isHost={roomData.isHost}
-                    onAddSimulatedPeer={handleAddSimulatedPeer}
-                    onSimulateHostDisconnect={handleSimulateHostDisconnect}
-                  />
-                ) : (
-                  <AuditLogView logs={roomData.auditLogs} />
-                )}
-              </div>
-            </aside>
+                {/* Tab Content */}
+                <div className="flex-1 min-h-0 overflow-hidden">
+                  {activeSideTab === 'participants' ? (
+                    <ParticipantsList
+                      participants={roomData.participants}
+                      currentUserId={userId}
+                    />
+                  ) : (
+                    <AuditLogView logs={roomData.auditLogs} />
+                  )}
+                </div>
+              </aside>
+            )}
           </main>
+
+          {/* Discreet Dev Tools Floating Trigger */}
+          <div className="fixed bottom-3 right-3 z-30">
+            <button
+              onClick={() => setIsDevToolsOpen((prev) => !prev)}
+              className="px-2.5 py-1 rounded-md text-[11px] font-medium text-zinc-400 hover:text-zinc-200 bg-zinc-900/90 hover:bg-zinc-850 border border-zinc-800 transition-colors shadow-sm cursor-pointer flex items-center gap-1.5"
+            >
+              <Terminal className="w-3 h-3 text-zinc-500" />
+              <span>Dev Tools</span>
+            </button>
+          </div>
+
+          {/* Collapsible Dev & Testing Drawer */}
+          <DevToolsDrawer
+            isOpen={isDevToolsOpen}
+            onClose={() => setIsDevToolsOpen(false)}
+            onAddSimulatedPeer={handleAddSimulatedPeer}
+            onTriggerFloodTest={handleTriggerFloodTest}
+            onSimulateHostDisconnect={handleSimulateHostDisconnect}
+            isHost={roomData.isHost}
+            participantCount={roomData.participants.length}
+            currentUpdateRate={currentUpdateRate}
+            onOpenDocs={() => setIsDocsOpen(true)}
+          />
+
+          {/* Architecture Documentation Modal */}
+          <ArchitectureDocsModal
+            isOpen={isDocsOpen}
+            onClose={() => setIsDocsOpen(false)}
+          />
         </>
       )}
-
-      {/* Architecture Documentation & Event Schema Modal */}
-      <ArchitectureDocsModal
-        isOpen={isDocsOpen}
-        onClose={() => setIsDocsOpen(false)}
-      />
     </div>
   );
 }

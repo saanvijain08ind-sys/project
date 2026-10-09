@@ -1,168 +1,130 @@
 import React, { useState } from 'react';
-import { Crown, Lock, Unlock, Copy, Check, BookOpen, LogOut, Share2, Radio } from 'lucide-react';
+import { Copy, Check, Play, Users, LogOut } from 'lucide-react';
 
 interface NavbarProps {
   roomId: string;
   hasPasscode: boolean;
-  isHost: boolean;
+  language: string;
+  onLanguageChange: (lang: string) => void;
+  onRunCode: () => void;
+  isRunning: boolean;
+  participantCount: number;
+  isSidebarOpen: boolean;
+  onToggleSidebar: () => void;
   isConnected: boolean;
   onLeaveRoom: () => void;
-  onOpenDocs: () => void;
-  currentUpdateRate: number;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
   roomId,
-  hasPasscode,
-  isHost,
+  language,
+  onLanguageChange,
+  onRunCode,
+  isRunning,
+  participantCount,
+  isSidebarOpen,
+  onToggleSidebar,
   isConnected,
   onLeaveRoom,
-  onOpenDocs,
-  currentUpdateRate,
 }) => {
   const [copied, setCopied] = useState(false);
 
-  const handleCopyRoomId = () => {
-    navigator.clipboard.writeText(roomId);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
-
-  const handleShare = () => {
-    const url = window.location.href.split('?')[0] + `?room=${roomId}`;
+  const handleCopyLink = () => {
+    const url = `${window.location.origin}${window.location.pathname}?room=${roomId}`;
     navigator.clipboard.writeText(url);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
 
   return (
-    <header className="h-14 bg-slate-900/90 border-b border-slate-800/80 px-4 flex items-center justify-between select-none backdrop-blur-md shrink-0">
-      {/* Brand & Room Info */}
+    <header className="h-12 bg-zinc-950 border-b border-zinc-800/80 px-4 flex items-center justify-between select-none shrink-0">
+      {/* Left: Brand + Room ID */}
       <div className="flex items-center gap-3">
         <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-indigo-600 to-violet-600 flex items-center justify-center text-white font-black text-sm shadow-md shadow-indigo-600/30">
+          <div className="w-6 h-6 rounded-md bg-white text-zinc-950 flex items-center justify-center font-bold text-xs">
             S
           </div>
-          <span className="font-bold text-sm text-slate-100 tracking-tight hidden sm:inline">
+          <span className="font-semibold text-sm text-zinc-100 tracking-tight">
             SyncPad
           </span>
         </div>
 
-        {/* Vertical divider */}
-        <div className="h-4 w-px bg-slate-800 hidden sm:block"></div>
+        <span className="text-zinc-700">/</span>
 
-        {/* Room Badge */}
-        <div className="flex items-center gap-1.5 bg-slate-950 px-2.5 py-1 rounded-lg border border-slate-800">
-          <span className="text-[11px] text-slate-400 font-medium">Room:</span>
-          <span className="font-mono text-xs text-indigo-300 font-semibold">{roomId}</span>
-          <button
-            onClick={handleCopyRoomId}
-            title="Copy Room ID"
-            className="text-slate-400 hover:text-slate-200 transition-colors p-0.5 cursor-pointer ml-0.5"
-          >
-            {copied ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
-          </button>
-        </div>
-
-        {/* Lock status */}
-        <div
-          title={hasPasscode ? 'Passcode Protected' : 'Open Access Room'}
-          className={`flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium border ${
-            hasPasscode
-              ? 'bg-amber-500/10 text-amber-300 border-amber-500/30'
-              : 'bg-slate-800/60 text-slate-400 border-slate-700/50'
-          }`}
+        {/* Room ID Badge with 1-click Copy */}
+        <button
+          onClick={handleCopyLink}
+          title="Click to copy invite link"
+          className="flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-mono text-zinc-300 hover:text-white bg-zinc-900 hover:bg-zinc-850 border border-zinc-800 transition-colors cursor-pointer group"
         >
-          {hasPasscode ? (
-            <>
-              <Lock className="w-3 h-3 text-amber-400" />
-              <span className="hidden md:inline">Protected</span>
-            </>
+          <span>{roomId}</span>
+          {copied ? (
+            <Check className="w-3 h-3 text-emerald-400" />
           ) : (
-            <>
-              <Unlock className="w-3 h-3 text-slate-500" />
-              <span className="hidden md:inline">Public</span>
-            </>
+            <Copy className="w-3 h-3 text-zinc-500 group-hover:text-zinc-300 transition-colors" />
           )}
-        </div>
-
-        {/* Host Status Badge */}
-        {isHost && (
-          <div className="flex items-center gap-1 bg-amber-500/15 border border-amber-500/40 text-amber-300 px-2 py-0.5 rounded text-[11px] font-semibold">
-            <Crown className="w-3 h-3 text-amber-400 fill-amber-400" />
-            <span>Room Host</span>
-          </div>
-        )}
+        </button>
       </div>
 
-      {/* Middle: Socket Rate Limiter Velocity Meter */}
-      <div className="hidden lg:flex items-center gap-2 px-3 py-1 bg-slate-950/70 border border-slate-800/80 rounded-lg text-xs font-mono">
-        <span className="text-slate-500">Rate Monitor:</span>
-        <div className="flex items-center gap-1.5">
-          <div className="w-16 h-2 bg-slate-800 rounded-full overflow-hidden">
-            <div
-              style={{ width: `${Math.min(100, (currentUpdateRate / 5) * 100)}%` }}
-              className={`h-full transition-all duration-200 ${
-                currentUpdateRate > 5
-                  ? 'bg-rose-500'
-                  : currentUpdateRate >= 4
-                  ? 'bg-amber-500'
-                  : 'bg-emerald-500'
-              }`}
-            />
-          </div>
-          <span
-            className={`${
-              currentUpdateRate > 5
-                ? 'text-rose-400 font-bold'
-                : currentUpdateRate >= 4
-                ? 'text-amber-400'
-                : 'text-emerald-400'
-            }`}
-          >
-            {currentUpdateRate}/5 req/s
-          </span>
-        </div>
-      </div>
-
-      {/* Right Actions */}
+      {/* Center: Language Selector + Clean Run Button */}
       <div className="flex items-center gap-2">
-        {/* Connection status indicator */}
-        <div
-          title={isConnected ? 'Real-Time WebSockets Connected' : 'Disconnected / Reconnecting'}
-          className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium border ${
-            isConnected
-              ? 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30'
-              : 'bg-rose-500/10 text-rose-300 border-rose-500/30'
+        <select
+          value={language}
+          onChange={(e) => onLanguageChange(e.target.value)}
+          aria-label="Language Mode"
+          className="bg-zinc-900 hover:bg-zinc-850 text-zinc-300 border border-zinc-800 rounded-md px-2.5 py-1 text-xs focus:outline-none focus:border-zinc-700 cursor-pointer font-medium transition-colors"
+        >
+          <option value="javascript">JavaScript</option>
+          <option value="typescript">TypeScript</option>
+          <option value="python">Python</option>
+          <option value="html">HTML</option>
+          <option value="css">CSS</option>
+          <option value="json">JSON</option>
+        </select>
+
+        <button
+          onClick={onRunCode}
+          disabled={isRunning}
+          className="flex items-center gap-1.5 px-3 py-1 rounded-md bg-zinc-100 hover:bg-white text-zinc-950 font-medium text-xs transition-colors cursor-pointer disabled:opacity-50 shadow-sm"
+        >
+          <Play className="w-3 h-3 fill-current" />
+          <span>{isRunning ? 'Running' : 'Run'}</span>
+        </button>
+      </div>
+
+      {/* Right: Participant Count Toggle + Connection + Leave */}
+      <div className="flex items-center gap-2">
+        {/* Toggle Right Sidebar Button */}
+        <button
+          onClick={onToggleSidebar}
+          title={isSidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}
+          className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium border transition-colors cursor-pointer ${
+            isSidebarOpen
+              ? 'bg-zinc-850 text-zinc-100 border-zinc-700'
+              : 'bg-zinc-900 text-zinc-400 hover:text-zinc-200 border-zinc-800'
           }`}
         >
-          <Radio className={`w-3 h-3 ${isConnected ? 'text-emerald-400 animate-pulse' : 'text-rose-400'}`} />
-          <span className="hidden sm:inline">{isConnected ? 'Live Socket' : 'Reconnecting...'}</span>
+          <Users className="w-3.5 h-3.5" />
+          <span>{participantCount}</span>
+        </button>
+
+        {/* Subtle Connection Status Dot */}
+        <div
+          title={isConnected ? 'Connected to workspace' : 'Reconnecting...'}
+          className="flex items-center gap-1 px-1.5 py-1"
+        >
+          <span
+            className={`w-2 h-2 rounded-full ${
+              isConnected ? 'bg-emerald-500' : 'bg-amber-500 animate-pulse'
+            }`}
+          />
         </div>
-
-        {/* Architecture Specs Modal trigger */}
-        <button
-          onClick={onOpenDocs}
-          className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-indigo-600/15 hover:bg-indigo-600/25 text-indigo-300 border border-indigo-500/30 text-xs font-medium transition-colors cursor-pointer"
-        >
-          <BookOpen className="w-3.5 h-3.5 text-indigo-400" />
-          <span className="hidden md:inline">Schema & Specs</span>
-        </button>
-
-        {/* Share Button */}
-        <button
-          onClick={handleShare}
-          title="Share Room Link"
-          className="p-1.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800 border border-slate-800 transition-colors cursor-pointer"
-        >
-          <Share2 className="w-3.5 h-3.5" />
-        </button>
 
         {/* Leave Room Button */}
         <button
           onClick={onLeaveRoom}
-          title="Leave Workspace"
-          className="p-1.5 rounded-lg text-rose-400 hover:text-rose-300 hover:bg-rose-950/40 border border-slate-800 transition-colors cursor-pointer"
+          title="Leave Room"
+          className="p-1.5 rounded-md text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900 transition-colors cursor-pointer"
         >
           <LogOut className="w-3.5 h-3.5" />
         </button>
