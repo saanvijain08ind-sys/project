@@ -149,7 +149,23 @@ npm run preview # or vite
 
 ## 5. Evaluator Verification Runbook
 
-Follow these exact steps to verify every requirement:
+### Automated Headless Test Suite (1-Command Verification)
+You can verify the entire multi-peer synchronization, rate limiter, and host failover engine in **headless CLI mode**:
+
+```bash
+npm test
+```
+
+This runs `server/test.js`, programmatically connecting 3 concurrent Socket.IO clients to verify:
+1. **Cryptographic Passcode Access Control**: Validates SHA-256 hash enforcement (rejects bad passcodes, admits valid ones).
+2. **Strict Rate Limiting**: Bursts 10 mutations in < 200ms and asserts that `rate_limit_exceeded` is emitted and updates exceeding 5 req/s are dropped.
+3. **Dynamic Host Failover**: Abruptly disconnects the room host and verifies the oldest remaining peer is promoted and notified.
+
+---
+
+### Interactive Browser Verification Runbook
+
+Follow these exact steps to verify every requirement interactively:
 
 ### Test Case 1: Concurrent Multi-Peer Editing & Live Cursor Tracking
 1. Open `http://localhost:3000` in Browser Window #1.
