@@ -1,0 +1,6 @@
+{
+  "name": "SyncPad - Real-Time Collaborative Workspace",
+  "description": "High-performance collaborative code editor with real-time cursor sync, room passcodes, per-connection rate limiting, and host failover.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
